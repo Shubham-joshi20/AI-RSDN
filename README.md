@@ -1,8 +1,13 @@
 
 # AIRSDN: AI-Based Routing in Software Defined Networks for Multimedia Traffic Transmission
 
-> **Authors:** Amit Nishad, Nikhilesh, Nikhil Bansal, Shubham Joshi  
+> **Authors:** Amit Nishad, Nikhilesh Joshi, Nikhil Bansal, Shubham Joshi  
 > **Project Proposal:** Advanced Algorithm Project
+
+## Project Documents
+
+- [Software Requirements Specification](SRS.md)
+- [Implementation Plan and Step-by-Step Procedure](IMPLEMENTATION_PLAN.md)
 
 ---
 
