@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from 'react-router'
 import './App.css'
 import Layout from './pages/Layout'
 import Visualization from './pages/Visualization'
+import Algorithms from './pages/Algorithms'
 
 
 function App() {
@@ -14,7 +15,7 @@ function App() {
       <Routes>
         <Route path='/' element={<Layout/>}>
           <Route path='/visualization' element={<Visualization/>} />
-          <Route path='/algorithm' element={<></>} />
+          <Route path='/algorithm' element={<Algorithms />} />
           <Route path='/about' element={<></>} />
         </Route>
       </Routes>

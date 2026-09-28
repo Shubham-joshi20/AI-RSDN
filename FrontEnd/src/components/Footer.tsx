@@ -6,11 +6,11 @@ import { CiDesktop, CiLight } from "react-icons/ci";
 // import { FaXTwitter } from "react-icons/fa6";
 import { motion } from "framer-motion";
 
+const themeOrder = ["light", "dark", "system"] as const;
+
 const Footer: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const [activeIndex, setActiveIndex] = useState(0);
-
-  const themeOrder = ["light", "dark", "system"];
 
   useEffect(() => {
     setActiveIndex(themeOrder.indexOf(theme));

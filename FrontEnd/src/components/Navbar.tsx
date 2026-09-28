@@ -3,24 +3,24 @@ import { useNavigate, useLocation } from "react-router";
 import { motion } from "framer-motion";
 import { FaGithub } from "react-icons/fa";
 
+const menuItems = ["Showcase", "Visualization", "Algorithm", "About"];
+
+const getActiveIndex = (pathname: string) => {
+  if (pathname === "/") return 0;
+  const currentIndex = menuItems.findIndex((item) =>
+    pathname.includes(item.toLowerCase())
+  );
+  return currentIndex !== -1 ? currentIndex : 0;
+};
+
 const Navbar: React.FC = () => {
   const nav = useNavigate();
   const location = useLocation();
 
-  const menuItems = ["Showcase", "Visualization", "Algorithm", "About"];
-
-  const getActiveIndex = () => {
-    if (location.pathname === "/") return 0;
-    const currentIndex = menuItems.findIndex((item) =>
-      location.pathname.includes(item.toLowerCase())
-    );
-    return currentIndex !== -1 ? currentIndex : 0;
-  };
-
-  const [activeIndex, setActiveIndex] = useState(getActiveIndex());
+  const [activeIndex, setActiveIndex] = useState(getActiveIndex(location.pathname));
 
   useEffect(() => {
-    setActiveIndex(getActiveIndex());
+    setActiveIndex(getActiveIndex(location.pathname));
   }, [location.pathname]);
 
   return (
