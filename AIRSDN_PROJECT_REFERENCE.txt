@@ -1,0 +1,225 @@
+AIRSDN PROJECT REFERENCE DOCUMENT
+AI-Based Routing in Software-Defined Networks for Multimedia Traffic Transmission
+
+Team Members
+Team Member 1 | Team Member 2 | Team Member 3 | Team Member 4
+Course: Advanced Algorithm Project
+
+======================================================================
+1. ONE-LINE PROJECT EXPLANATION
+======================================================================
+AIRSDN is an AI-assisted Software-Defined Networking system that dynamically selects a less-congested route for multimedia traffic and uses Quality of Experience (QoE) metrics as a reliable fallback when the ML model is uncertain.
+
+======================================================================
+2. PROBLEM STATEMENT
+======================================================================
+Traditional shortest-path routing mainly chooses a route using hop count. During multimedia transmission, the shortest route may already be congested, causing high delay, jitter, packet loss, low throughput, and poor video quality. The routing system therefore needs to observe current network conditions, predict traffic congestion, compare multiple possible paths, and select the route that provides better network performance and user-perceived video quality. It must also handle uncertain ML predictions safely instead of blindly trusting them.
+
+======================================================================
+3. PROJECT AIM
+======================================================================
+To design and demonstrate a reproducible SDN-based multimedia routing system that combines machine-learning traffic prediction with real-time network measurements and QoE-based decision-making, and to compare its performance with traditional routing approaches.
+
+======================================================================
+4. FOUR MAJOR OBJECTIVES AND TEAM WORK DIVISION
+======================================================================
+
+OBJECTIVE 1: BUILD THE SDN NETWORK AND CONTROLLER INTEGRATION
+Assigned to: Team Member 1
+
+Purpose:
+Create the virtual NSFNET-style network and establish the infrastructure required for controlled routing experiments.
+
+Detailed work:
+- Build a deterministic 14-switch, NSFNET-style topology in Mininet.
+- Configure hosts, links, bandwidth, delay, packet loss, and alternative paths.
+- Create the main source and destination hosts and configurable background clients.
+- Integrate Mininet switches with the Floodlight SDN controller through OpenFlow.
+- Implement controller communication for switch discovery, flow installation, flow verification, and flow removal.
+- Validate the reference 3-hop, 4-hop, and 5-hop paths.
+- Add reset and cleanup functionality so one experiment does not affect another.
+- Record the environment versions and setup steps for reproducibility.
+
+Expected deliverables:
+- Working Mininet NSFNET topology.
+- Floodlight connectivity and controller adapter.
+- Path and topology validation scripts.
+- Flow installation/removal demonstration.
+- Environment setup and troubleshooting notes.
+
+How this supports the project:
+This objective provides the network environment in which all telemetry collection, ML decisions, routing experiments, and multimedia tests will run.
+
+
+OBJECTIVE 2: COLLECT NETWORK DATA AND DEVELOP THE ML TRAFFIC PREDICTION MODEL
+Assigned to: Team Member 2
+
+Purpose:
+Measure network conditions and build a versioned ML model that identifies whether a candidate path is experiencing low or high traffic.
+
+Detailed work:
+- Generate repeatable low-traffic and high-traffic scenarios using iperf3 and background flows.
+- Collect RTT/latency, throughput, packet loss, jitter, bandwidth utilization, packet counts, and flow duration.
+- Use ping, iperf3, NFStream, and controller statistics where available.
+- Store raw observations separately from cleaned and processed data.
+- Define the binary labels: low traffic and high traffic.
+- Prepare the feature pipeline and document the selected features.
+- Compare Logistic Regression, Random Forest, SVM, KNN, AdaBoost, and XGBoost when available.
+- Use a reproducible 70% training, 15% validation, and 15% test split without data leakage.
+- Evaluate precision, recall, F1 score, confusion matrix, ROC curve, and AUC.
+- Save the model, preprocessing steps, feature names, label mapping, model version, and training metadata.
+- Ensure that a fresh process can load the model and generate a confidence value for new data.
+
+Expected deliverables:
+- Reproducible network dataset.
+- Data cleaning and feature preparation pipeline.
+- Trained and saved ML model artifact.
+- Model comparison and evaluation report.
+- Inference interface returning traffic class and confidence.
+
+How this supports the project:
+This objective supplies the prediction and confidence information needed by the routing decision engine to choose an appropriate path.
+
+
+OBJECTIVE 3: DESIGN THE CONFIDENCE-AWARE ROUTING AND QoE FALLBACK ALGORITHM
+Assigned to: Team Member 3
+
+Purpose:
+Develop the core algorithm that evaluates candidate paths, uses ML when confidence is high, and falls back to QoE-based routing when the prediction is uncertain or invalid.
+
+Detailed work:
+- Generate up to the five shortest valid candidate paths between the source and destination.
+- Attach current telemetry measurements to each candidate path.
+- Call the ML model for candidate-path traffic prediction.
+- Use the configured confidence threshold, with 0.90 as the default.
+- Select ML-based routing when confidence is at least 0.90 and the prediction is valid.
+- Activate QoE fallback when confidence is below 0.90, telemetry is incomplete, or model output is invalid.
+- Create a normalized QoE score using throughput, latency, packet loss, jitter, and bandwidth utilization.
+- Reward high throughput and penalize delay, loss, jitter, and utilization.
+- Record the selected path, rejected paths, confidence, threshold, scores, input metrics, and decision reason.
+- Add rerouting logic based on time or significant network changes.
+- Prevent unnecessary route changes when the current route is still acceptable.
+- Connect the selected route to the Floodlight flow-installation component.
+- Test high-confidence, low-confidence, missing-data, invalid-model, no-route, and installation-failure cases.
+
+Expected deliverables:
+- Candidate-path generation module.
+- Confidence-aware decision engine.
+- QoE fallback scoring module.
+- Rerouting and route-stability logic.
+- Unit tests and decision logs.
+- Algorithm explanation with pseudocode and flowchart.
+
+How this supports the project:
+This is the central algorithmic contribution. It converts measurements and ML predictions into an explainable routing decision that is safer and more useful for multimedia traffic.
+
+
+OBJECTIVE 4: CONNECT MULTIMEDIA QUALITY, BACKEND API, VISUALIZATION, AND FINAL EVALUATION
+Assigned to: Team Member 4
+
+Purpose:
+Make the complete system understandable to users and prove whether AI-assisted routing improves multimedia transmission compared with baseline methods.
+
+Detailed work:
+- Develop the backend API for topology, experiments, metrics, candidate paths, decisions, quality results, and exports.
+- Connect the backend to the routing engine and the React/Vite frontend.
+- Build a dashboard showing the network topology, active path, alternate paths, congestion, and flow-level packet movement.
+- Display the ML prediction, confidence, threshold, selected routing mode, QoE fallback reason, and decision timeline.
+- Show live or latest-known RTT, throughput, packet loss, jitter, utilization, PSNR, and SSIM values with timestamps.
+- Transfer a test video through baseline and AI-selected routes.
+- Calculate transfer size/loss, PSNR, and SSIM for the received video.
+- Compare at least three strategies under the same conditions:
+  1. Hop-count shortest-path routing.
+  2. QoS-aware routing using network metrics.
+  3. AIRSDN confidence-aware AI routing with QoE fallback.
+- Add run start, stop, reset, repeat, status, and export functions.
+- Prepare a final report containing configuration, results, graphs, limitations, and conclusions.
+- Ensure that missing telemetry is shown as stale or invalid rather than as a false zero.
+
+Expected deliverables:
+- Backend API and event/data contract.
+- React dashboard for visualization and demonstration.
+- Multimedia quality analysis module.
+- Baseline-versus-AIRSDN comparison report.
+- Exportable experiment summary.
+- Final integration test and project demonstration.
+
+How this supports the project:
+This objective turns the technical work into a demonstrable product and connects routing decisions to actual multimedia quality and measurable experimental results.
+
+======================================================================
+5. PROPOSED SYSTEM WORKFLOW
+======================================================================
+1. Create the NSFNET-style topology in Mininet.
+2. Connect the switches to Floodlight.
+3. Select a source, destination, traffic scenario, and test video.
+4. Generate background and multimedia traffic.
+5. Collect latency, throughput, loss, jitter, and utilization data.
+6. Generate up to five shortest candidate paths.
+7. Send candidate features to the ML model.
+8. Check the model confidence against the 0.90 threshold.
+9. If confidence is high, use ML-based route selection.
+10. If confidence is low or the prediction is invalid, use QoE-based fallback.
+11. Install the selected route through Floodlight.
+12. Transfer the video and measure network and video-quality results.
+13. Display the decision, route, metrics, and quality results in the dashboard.
+14. Compare AIRSDN with hop-count and QoS-aware baselines.
+
+======================================================================
+6. NOVELTY / UNIQUE CONTRIBUTION
+======================================================================
+The novelty of AIRSDN is not simply using machine learning for routing. Its proposed contribution is the combination of the following ideas in one explainable multimedia-routing framework:
+
+1. CONFIDENCE-AWARE HYBRID ROUTING
+The system does not blindly trust every ML prediction. A confidence threshold is used. High-confidence predictions can guide route selection, while uncertain predictions automatically move to a deterministic QoE-based fallback.
+
+2. MULTIMEDIA-FOCUSED QoE DECISION-MAKING
+The fallback decision considers the metrics that directly affect video delivery: throughput, latency, packet loss, jitter, and bandwidth utilization. The final evaluation also connects network behavior to PSNR and SSIM video-quality measurements.
+
+3. MULTI-PATH, EXPLAINABLE ROUTE COMPARISON
+Instead of considering only one shortest route, the system evaluates up to five candidate paths. For every decision, it can show the candidate paths, their metrics, the ML confidence, the QoE score, and the reason why one path was selected.
+
+4. CLOSED-LOOP SDN CONTROL AND RE-ROUTING
+The selected route is installed through an SDN controller, and the system can re-evaluate the route when network conditions change. This creates a closed loop: measure, predict, decide, install, observe, and reroute.
+
+5. REPRODUCIBLE AND DEMONSTRABLE EVALUATION
+The project compares AIRSDN with hop-count and QoS-aware baselines under repeatable traffic conditions. The dashboard exposes the decision process instead of showing only a final accuracy number, making the work easier to verify and explain.
+
+Suggested novelty statement for presentation:
+"AIRSDN proposes a confidence-aware hybrid routing framework for multimedia traffic in SDN, where machine-learning predictions select routes only when sufficiently reliable, and a QoE-based multi-metric fallback handles uncertainty while the SDN controller dynamically applies and visualizes the decision."
+
+Important wording:
+The above is the proposed novelty of the project. Final claims must be supported by the experiments and comparison results produced by the implementation.
+
+======================================================================
+7. SUCCESS CRITERIA
+======================================================================
+The project will be considered successful when:
+- The virtual topology starts and Floodlight connectivity is verified.
+- Low-traffic and high-traffic scenarios can be repeated.
+- At least five valid candidate paths can be displayed when available.
+- A high-confidence case selects ML routing.
+- A low-confidence case selects QoE fallback and explains why.
+- The selected route is installed and verified through the controller.
+- A route change is recorded when network conditions require rerouting.
+- AIRSDN, hop-count, and QoS-aware results can be compared fairly.
+- Network metrics and video-quality metrics are associated with the correct run.
+- The dashboard clearly shows what happened, which path was selected, and why.
+- Results can be exported and reproduced using the saved configuration and model version.
+
+======================================================================
+8. COORDINATION BETWEEN MEMBERS
+======================================================================
+Team Member 1's network module must expose topology, link, host, and flow information to the other modules.
+Team Member 2's ML module must define and publish the feature schema and inference interface before routing integration.
+Team Member 3's decision engine must accept telemetry and ML results through clear data structures and return a complete routing-decision record.
+Team Member 4's API and dashboard must consume those records without reimplementing routing logic.
+
+Recommended integration order:
+1. Team Member 1 proves topology and controller flow installation.
+2. Team Member 2 proves telemetry collection and repeatable model inference.
+3. Team Member 3 proves routing decisions using simulated or recorded metrics.
+4. Team Member 4 connects the API, visualization, video analysis, and final experiments.
+
+Final project message:
+AIRSDN makes multimedia routing adaptive, confidence-aware, measurable, and explainable by combining SDN control, machine-learning prediction, QoE-based fallback, and visual experimental evidence.

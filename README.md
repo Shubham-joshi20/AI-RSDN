@@ -65,3 +65,11 @@ We further enhance the framework with a **Confidence-Aware and QoE-Driven routin
 5. **Model Evaluation:** Predict traffic level and confidence score[cite: 1]
 6. **Decision Engine:** Route via ML prediction if confidence is high; otherwise, invoke QoE-based selection[cite: 1]
 7. Update Flow Tables via Floodlight and execute periodic re-routing if network conditions shift[cite: 1]
+
+
+python -m backend.server
+
+cd FrontEnd
+npm run dev
+
+http://localhost:5173/visualization

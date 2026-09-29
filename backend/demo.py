@@ -41,14 +41,16 @@ def build_candidates(scenario: str, paths: list[tuple[int, ...]]) -> list[PathMe
     return candidates
 
 
-def run_demo(scenario: str) -> dict[str, object]:
+def run_demo(scenario: str, confidence_threshold: float = 0.90) -> dict[str, object]:
+    if scenario not in {"low", "high"}:
+        raise ValueError("scenario must be low or high")
     topology = NetworkTopology()
     validation = topology.validate()
     if not validation.passed:
         raise RuntimeError(f"topology validation failed: {validation}")
 
     paths = topology.shortest_paths(0, 9, limit=5)
-    decision = choose_route(build_candidates(scenario, paths))
+    decision = choose_route(build_candidates(scenario, paths), confidence_threshold)
     return {
         "scenario": scenario,
         "nodes": [{"id": node, "label": f"S{node}"} for node in topology.nodes],
