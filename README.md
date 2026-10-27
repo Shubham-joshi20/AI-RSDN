@@ -8,6 +8,30 @@
 
 - [Software Requirements Specification](SRS.md)
 - [Implementation Plan and Step-by-Step Procedure](IMPLEMENTATION_PLAN.md)
+- [Real Mininet, Floodlight, iperf3, and NFStream Integration](REAL_INTEGRATION.md)
+- [Project Completion Guide](PROJECT_COMPLETION_GUIDE.md)
+
+## Windows Quick Start
+
+The complete simulation, backend API, experiment history, live ping probe, and visualization run on Windows inside a Python virtual environment:
+
+```powershell
+.\setup_windows.ps1
+```
+
+Start the backend in one PowerShell window:
+
+```powershell
+.\run_backend_windows.ps1
+```
+
+Start the frontend in a second PowerShell window:
+
+```powershell
+.\run_frontend_windows.ps1
+```
+
+Open `http://localhost:5173/visualization`. The dashboard reports whether each real network dependency is available. Mininet, Open vSwitch, and Floodlight still require Ubuntu, a Linux VM, or a compatible WSL2 setup; a Python virtual environment cannot replace those operating-system components.
 
 ---
 

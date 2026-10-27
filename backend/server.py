@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from backend.demo import run_demo
 from backend.experiments import store
+from backend.integration import LiveProbeRunner, integration_status
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -13,6 +14,10 @@ class ApiHandler(BaseHTTPRequestHandler):
         request = urlparse(self.path)
         if request.path == "/api/health":
             self._send_json({"status": "ok", "service": "airsdn-routing"})
+            return
+        if request.path == "/api/integration/status":
+            floodlight_url = parse_qs(request.query).get("floodlight", ["http://127.0.0.1:8080"])[0]
+            self._send_json(integration_status(floodlight_url))
             return
         if request.path == "/api/runs":
             self._send_json({"runs": store.list_runs()})
@@ -32,6 +37,13 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         request = urlparse(self.path)
         try:
+            if request.path == "/api/integration/probe":
+                payload = self._read_json()
+                host = str(payload.get("host", "127.0.0.1")).strip()
+                if not host or len(host) > 255:
+                    raise ValueError("host must be a non-empty address")
+                self._send_json(LiveProbeRunner().probe(host))
+                return
             if request.path == "/api/runs":
                 payload = self._read_json()
                 scenario = payload.get("scenario", "low")
