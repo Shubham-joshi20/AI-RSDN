@@ -1,8 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 type Scenario = "low" | "high";
-type PlaybackPhase = "topology" | "candidates" | "telemetry" | "prediction" | "decision" | "flow" | "complete";
-type GraphLayout = "nsfnet" | "layered" | "radial";
+type PlaybackSpeed = "slow" | "medium" | "fast";
 
 type Link = {
     source: number;
@@ -23,20 +22,17 @@ type Candidate = {
     qoe_score: number;
 };
 
-type BaselineResult = {
+type StrategyResult = {
     strategy: string;
     selected_path_id: string;
-    reason: string;
-    hop_count: number;
     latency_ms: number;
     throughput_mbps: number;
-    packet_loss_pct: number;
-    jitter_ms: number;
-    utilization_pct: number;
 };
 
 type DemoResult = {
     scenario: Scenario;
+    source: number;
+    destination: number;
     nodes: { id: number; label: string }[];
     links: Link[];
     topology: {
@@ -53,230 +49,135 @@ type DemoResult = {
         selected_confidence: number;
         candidates: Candidate[];
     };
-    baselines: Record<"hop_count" | "qos_aware" | "airsdn", BaselineResult>;
-};
-
-type RunSummary = {
-    id: string;
-    scenario: Scenario;
-    status: string;
-    created_at: string;
-    completed_at: string | null;
-    mode: string;
-    selected_path_id: string;
-    event_count: number;
-};
-
-type ExperimentRun = {
-    id: string;
-    status: string;
-    result: DemoResult;
-    events: {
-        eventId: string;
-        timestamp: string;
-        type: string;
-        payload: Record<string, string | number>;
-    }[];
-};
-
-type IntegrationStatus = {
-    mode: "real" | "simulation";
-    tools: { name: string; available: boolean; detail: string }[];
-    limitations: string[];
-};
-
-type LiveProbe = {
-    host: string;
-    has_valid_data: boolean;
-    metrics: { metric: string; value: number; unit: string; source: string; quality: string; detail?: string }[];
+    baselines: {
+        hop_count: StrategyResult;
+        qos_aware: StrategyResult;
+        airsdn: StrategyResult;
+    };
+    stream?: {
+        mode: string;
+        forwarding: boolean;
+        running_seconds: number;
+        packets: { id: string; path: number[]; progress: number }[];
+    };
 };
 
 const nodePositions: Record<number, { x: number; y: number }> = {
-    0: { x: 70, y: 190 },
-    1: { x: 190, y: 85 },
-    2: { x: 190, y: 295 },
-    3: { x: 190, y: 190 },
-    4: { x: 330, y: 35 },
-    5: { x: 330, y: 150 },
-    6: { x: 330, y: 345 },
-    7: { x: 470, y: 100 },
-    8: { x: 470, y: 230 },
-    9: { x: 735, y: 190 },
-    10: { x: 610, y: 100 },
-    11: { x: 470, y: 350 },
-    12: { x: 610, y: 300 },
-    13: { x: 610, y: 210 },
+    0: { x: 58, y: 205 },
+    1: { x: 138, y: 128 },
+    2: { x: 138, y: 282 },
+    3: { x: 225, y: 190 },
+    4: { x: 300, y: 220 },
+    5: { x: 292, y: 342 },
+    6: { x: 385, y: 190 },
+    7: { x: 465, y: 170 },
+    8: { x: 545, y: 86 },
+    9: { x: 715, y: 145 },
+    10: { x: 560, y: 165 },
+    11: { x: 638, y: 42 },
+    12: { x: 650, y: 282 },
+    13: { x: 550, y: 360 },
 };
 
-const graphLayouts: Record<GraphLayout, Record<number, { x: number; y: number }>> = {
-    nsfnet: nodePositions,
-    layered: {
-        0: { x: 70, y: 200 }, 1: { x: 220, y: 90 }, 2: { x: 220, y: 300 }, 3: { x: 220, y: 200 },
-        4: { x: 390, y: 55 }, 5: { x: 390, y: 165 }, 6: { x: 390, y: 345 }, 7: { x: 560, y: 100 },
-        8: { x: 560, y: 250 }, 9: { x: 750, y: 200 }, 10: { x: 720, y: 85 }, 11: { x: 560, y: 360 },
-        12: { x: 700, y: 320 }, 13: { x: 560, y: 170 },
-    },
-    radial: {
-        0: { x: 400, y: 200 }, 1: { x: 260, y: 85 }, 2: { x: 170, y: 200 }, 3: { x: 260, y: 315 },
-        4: { x: 400, y: 55 }, 5: { x: 530, y: 85 }, 6: { x: 625, y: 175 }, 7: { x: 625, y: 285 },
-        8: { x: 530, y: 350 }, 9: { x: 400, y: 345 }, 10: { x: 750, y: 200 }, 11: { x: 170, y: 315 },
-        12: { x: 650, y: 360 }, 13: { x: 700, y: 330 },
-    },
-};
-
-const playbackPhases: { key: PlaybackPhase; label: string; description: string }[] = [
-    { key: "topology", label: "Discover topology", description: "The controller verifies the available switches, links, source, and destination." },
-    { key: "candidates", label: "Calculate candidate paths", description: "The routing engine enumerates up to five loop-free shortest paths." },
-    { key: "telemetry", label: "Collect traffic metrics", description: "Each candidate receives latency, throughput, loss, jitter, and utilization measurements." },
-    { key: "prediction", label: "Predict traffic", description: "The ML classifier estimates traffic level and confidence for each candidate." },
-    { key: "decision", label: "Select route", description: "Confidence is compared with the threshold; uncertain predictions use QoE scoring." },
-    { key: "flow", label: "Update flow table", description: "The selected route is sent to the SDN controller for forwarding." },
-    { key: "complete", label: "Transmit multimedia", description: "Traffic follows the selected route while the experiment records its result." },
+const algorithmStages = [
+    { title: "Check the NSFNET topology", description: "Confirm all 14 switches and 20 inter-switch links are connected, then use the receiver at S0 and sender at S9." },
+    { title: "Calculate candidate paths", description: "Enumerate loop-free paths, sort them by hop count, and keep the five shortest candidates." },
+    { title: "Compare path telemetry", description: "Compare each candidate's latency / RTT estimate, throughput, packet loss, jitter, and link utilization." },
+    { title: "Classify traffic", description: "Read the low / high traffic class and confidence for each path. These Windows demo predictions are deterministic scenario values." },
+    { title: "Rank paths by QoE", description: "Normalize throughput, delay, loss, jitter, and utilization, then apply the weighted QoE score." },
+    { title: "Choose route and forward", description: "Use a low-traffic prediction only when confidence reaches 90%; otherwise use the best QoE score. Packets follow the selected route." },
 ];
+
+const playbackTimings: Record<PlaybackSpeed, { stepMs: number; packetSeconds: number }> = {
+    slow: { stepMs: 3600, packetSeconds: 7.2 },
+    medium: { stepMs: 1900, packetSeconds: 3.8 },
+    fast: { stepMs: 850, packetSeconds: 1.7 },
+};
+
+const pathColors = ["#f59e0b", "#a78bfa", "#fb7185", "#34d399", "#38bdf8"];
+
+function StrategyChart({ title, unit, items, color }: { title: string; unit: string; items: { label: string; value: number; path: string }[]; color: string }) {
+    const chart = { left: 48, right: 456, top: 24, bottom: 174 };
+    const maximum = Math.max(...items.map((item) => item.value), 1) * 1.18;
+    const barWidth = 66;
+    const centers = [116, 252, 388];
+    return (
+        <article className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
+            <h3 className="font-semibold">{title}</h3>
+            <svg viewBox="0 0 480 236" className="mt-2 h-auto w-full" role="img" aria-label={`${title} comparison for hop-count, QoS-aware, and AIRSDN routing`}>
+                {[0, 1, 2, 3].map((tick) => {
+                    const y = chart.bottom - (tick / 3) * (chart.bottom - chart.top);
+                    return <g key={tick}><line x1={chart.left} y1={y} x2={chart.right} y2={y} stroke="#94a3b8" strokeOpacity=".24" /><text x={chart.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#94a3b8">{(maximum * tick / 3).toFixed(0)}</text></g>;
+                })}
+                {items.map((item, index) => {
+                    const height = (item.value / maximum) * (chart.bottom - chart.top);
+                    const x = centers[index] - barWidth / 2;
+                    const y = chart.bottom - height;
+                    return <g key={item.label}><title>{`${item.label}: ${item.value} ${unit}; route ${item.path}`}</title><rect x={x} y={y} width={barWidth} height={height} rx="5" fill={index === 2 ? color : "#64748b"} opacity={index === 2 ? 0.9 : 0.58} /><text x={centers[index]} y={Math.max(y - 7, 15)} textAnchor="middle" fontSize="11" fontWeight="700" fill="#cbd5e1">{item.value}</text><text x={centers[index]} y="194" textAnchor="middle" fontSize="10" fontWeight="600" fill="#94a3b8">{item.label}</text><text x={centers[index]} y="211" textAnchor="middle" fontSize="8" fill="#64748b">{item.path}</text></g>;
+                })}
+                <text x="12" y="15" fontSize="9" fill="#64748b">{unit}</text>
+            </svg>
+        </article>
+    );
+}
 
 const Visualization = () => {
     const [scenario, setScenario] = useState<Scenario>("low");
+    const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>("medium");
+    const [activeStep, setActiveStep] = useState(0);
+    const [playing, setPlaying] = useState(true);
     const [data, setData] = useState<DemoResult | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [runId, setRunId] = useState<string | null>(null);
-    const [runStatus, setRunStatus] = useState("preview");
-    const [history, setHistory] = useState<RunSummary[]>([]);
-    const [isStarting, setIsStarting] = useState(false);
-    const [events, setEvents] = useState<ExperimentRun["events"]>([]);
-    const [phaseIndex, setPhaseIndex] = useState(0);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [pulseIndex, setPulseIndex] = useState(0);
-    const [graphLayout, setGraphLayout] = useState<GraphLayout>("nsfnet");
-    const [integration, setIntegration] = useState<IntegrationStatus | null>(null);
-    const [probeHost, setProbeHost] = useState("127.0.0.1");
-    const [probe, setProbe] = useState<LiveProbe | null>(null);
-    const [isProbing, setIsProbing] = useState(false);
-    const selectedPath = data?.decision.selected_path ?? [];
-    const currentPhase = playbackPhases[phaseIndex];
-    const visibleSelectedPath = phaseIndex >= 4 ? selectedPath : [];
-    const selectedLinks = new Set(
-        visibleSelectedPath.slice(0, -1).map((node, index) => {
-            const next = visibleSelectedPath[index + 1];
-            return node < next ? `${node}-${next}` : `${next}-${node}`;
-        }),
-    );
-    const pulseNode = selectedPath[pulseIndex];
-    const positions = graphLayouts[graphLayout];
-
-    const restartPlayback = () => {
-        setPhaseIndex(0);
-        setPulseIndex(0);
-        setIsPlaying(false);
-    };
-
-    const stepPlayback = (direction: number) => {
-        setIsPlaying(false);
-        setPhaseIndex((current) => Math.max(0, Math.min(playbackPhases.length - 1, current + direction)));
-    };
 
     useEffect(() => {
         let cancelled = false;
         setError(null);
-        setRunId(null);
-        setRunStatus("preview");
-        setEvents([]);
-        setPhaseIndex(0);
-        setIsPlaying(false);
-        setPulseIndex(0);
-        fetch(`/api/demo?scenario=${scenario}`)
+        const forwarding = activeStep === algorithmStages.length - 1;
+        const update = () => fetch(`/api/stream?scenario=${scenario}&forwarding=${forwarding}`)
             .then((response) => {
                 if (!response.ok) throw new Error("The routing API returned an error.");
                 return response.json() as Promise<DemoResult>;
             })
-            .then((result) => {
-                if (!cancelled) setData(result);
-            })
+            .then((result) => { if (!cancelled) setData(result); })
             .catch(() => {
                 if (!cancelled) {
                     setData(null);
                     setError("Start the Python API with: python -m backend.server");
                 }
             });
-        fetch("/api/runs")
-            .then((response) => response.json() as Promise<{ runs: RunSummary[] }>)
-            .then((result) => {
-                if (!cancelled) setHistory(result.runs);
-            })
-            .catch(() => undefined);
-        fetch("/api/integration/status")
-            .then((response) => response.json() as Promise<IntegrationStatus>)
-            .then((result) => {
-                if (!cancelled) setIntegration(result);
-            })
-            .catch(() => undefined);
+        void update();
+        const timer = window.setInterval(update, 700);
         return () => {
             cancelled = true;
+            window.clearInterval(timer);
         };
-    }, [scenario]);
+    }, [scenario, activeStep]);
 
     useEffect(() => {
-        if (!isPlaying) return undefined;
-        const timer = window.setInterval(() => {
-            setPhaseIndex((current) => {
-                if (current >= playbackPhases.length - 1) {
-                    setIsPlaying(false);
-                    return current;
-                }
-                return current + 1;
-            });
-        }, 2200);
-        return () => window.clearInterval(timer);
-    }, [isPlaying]);
-
-    useEffect(() => {
-        if (!isPlaying || phaseIndex < 2 || !selectedPath.length) return undefined;
-        const timer = window.setInterval(() => {
-            setPulseIndex((current) => (current + 1) % selectedPath.length);
-        }, 650);
-        return () => window.clearInterval(timer);
-    }, [isPlaying, phaseIndex, selectedPath.length]);
-
-    const startExperiment = async () => {
-        setIsStarting(true);
-        setError(null);
-        try {
-            const response = await fetch("/api/runs", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ scenario, confidence_threshold: 0.9 }),
-            });
-            if (!response.ok) throw new Error("The experiment API returned an error.");
-            const run = await response.json() as ExperimentRun;
-            setData(run.result);
-            setRunId(run.id);
-            setRunStatus(run.status);
-            setEvents(run.events);
-            const historyResponse = await fetch("/api/runs");
-            const historyData = await historyResponse.json() as { runs: RunSummary[] };
-            setHistory(historyData.runs);
-        } catch {
-            setError("Could not start the experiment. Start the Python API with: python -m backend.server");
-        } finally {
-            setIsStarting(false);
+        if (!playing || activeStep >= algorithmStages.length - 1) {
+            if (activeStep >= algorithmStages.length - 1) setPlaying(false);
+            return;
         }
-    };
+        const timer = window.setTimeout(() => setActiveStep((step) => Math.min(step + 1, algorithmStages.length - 1)), playbackTimings[playbackSpeed].stepMs);
+        return () => window.clearTimeout(timer);
+    }, [activeStep, playbackSpeed, playing]);
 
-    const probeLiveHost = async () => {
-        setIsProbing(true);
-        try {
-            const response = await fetch("/api/integration/probe", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ host: probeHost }),
-            });
-            if (!response.ok) throw new Error("Live probe failed");
-            setProbe(await response.json() as LiveProbe);
-        } catch {
-            setProbe({ host: probeHost, has_valid_data: false, metrics: [{ metric: "probe", value: 0, unit: "", source: "backend", quality: "invalid", detail: "Probe request failed." }] });
-        } finally {
-            setIsProbing(false);
-        }
-    };
+    const selectedPath = data?.decision.selected_path ?? [];
+    const selectedPathD = selectedPath.map((node, index) => {
+        const point = nodePositions[node];
+        return `${index === 0 ? "M" : "L"}${point.x} ${point.y}`;
+    }).join(" ");
+    const candidatePathD = (path: number[]) => path.map((node, index) => {
+        const point = nodePositions[node];
+        return `${index === 0 ? "M" : "L"}${point.x} ${point.y}`;
+    }).join(" ");
+    const sortedCandidates = [...(data?.decision.candidates ?? [])].sort((left, right) => activeStep === 4 ? right.qoe_score - left.qoe_score : left.hop_count - right.hop_count || left.path_id.localeCompare(right.path_id));
+    const selectedLinks = new Set(
+        selectedPath.slice(0, -1).map((node, index) => {
+            const next = selectedPath[index + 1];
+            return node < next ? `${node}-${next}` : `${next}-${node}`;
+        }),
+    );
 
     return (
         <section className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 text-left md:px-8">
@@ -289,15 +190,15 @@ const Visualization = () => {
                         Network decision view
                     </h1>
                     <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-300">
-                        Live results from the Python topology and confidence-aware routing engine.
+                        Backend-driven NSFNET topology, routing decisions, and continuous packet flow.
                     </p>
                 </div>
                 <div className="flex gap-2" role="group" aria-label="Traffic scenario">
                     {(["low", "high"] as Scenario[]).map((option) => (
-                        <button
+                            <button
                             key={option}
                             type="button"
-                            onClick={() => setScenario(option)}
+                                onClick={() => { setScenario(option); setActiveStep(0); setPlaying(true); }}
                             className={`rounded-lg border px-4 py-2 text-sm font-semibold capitalize transition ${
                                 scenario === option
                                     ? "border-blue-700 bg-blue-700 text-white"
@@ -307,67 +208,8 @@ const Visualization = () => {
                             {option} traffic
                         </button>
                     ))}
-                    <button
-                        type="button"
-                        onClick={startExperiment}
-                        disabled={isStarting}
-                        className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-wait disabled:opacity-60"
-                    >
-                        {isStarting ? "Running..." : "Start experiment"}
-                    </button>
                 </div>
             </header>
-
-            <section className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 shadow-sm" aria-label="Slow routing playback">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">Slow explanation mode</p>
-                        <h2 className="mt-1 text-xl font-bold">{currentPhase.label}</h2>
-                        <p className="mt-1 max-w-3xl text-sm text-zinc-700 dark:text-zinc-200">{currentPhase.description}</p>
-                    </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                        <button type="button" onClick={restartPlayback} className="rounded-lg border border-zinc-400/50 px-3 py-2 text-sm font-semibold hover:border-blue-500">Restart</button>
-                        <button type="button" onClick={() => stepPlayback(-1)} disabled={phaseIndex === 0} className="rounded-lg border border-zinc-400/50 px-3 py-2 text-sm font-semibold disabled:opacity-40">Previous</button>
-                        <button type="button" onClick={() => setIsPlaying((playing) => !playing)} className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800">{isPlaying ? "Pause" : "Play slowly"}</button>
-                        <button type="button" onClick={() => stepPlayback(1)} disabled={phaseIndex === playbackPhases.length - 1} className="rounded-lg border border-zinc-400/50 px-3 py-2 text-sm font-semibold disabled:opacity-40">Next</button>
-                    </div>
-                </div>
-                <div className="mt-4 grid gap-2 md:grid-cols-7">
-                    {playbackPhases.map((phase, index) => (
-                        <button
-                            key={phase.key}
-                            type="button"
-                            onClick={() => { setIsPlaying(false); setPhaseIndex(index); }}
-                            className={`min-h-14 rounded-lg border px-2 py-2 text-left text-xs transition ${index === phaseIndex ? "border-blue-700 bg-blue-700 text-white" : index < phaseIndex ? "border-emerald-600/40 bg-emerald-500/10" : "border-zinc-400/40 bg-white/40 dark:bg-zinc-900/30"}`}
-                        >
-                            <span className="font-mono font-bold">{String(index + 1).padStart(2, "0")}</span>
-                            <span className="mt-1 block font-semibold">{phase.label}</span>
-                        </button>
-                    ))}
-                </div>
-            </section>
-
-            <section className="flex flex-col gap-3 rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60 md:flex-row md:items-center md:justify-between" aria-label="Graph layout selector">
-                <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Topology view</p>
-                    <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-300">Change the visual arrangement without changing the network links or routing result.</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {(["nsfnet", "layered", "radial"] as GraphLayout[]).map((layout) => (
-                        <button
-                            key={layout}
-                            type="button"
-                            onClick={() => setGraphLayout(layout)}
-                            className={`rounded-lg border px-3 py-2 text-sm font-semibold capitalize ${graphLayout === layout ? "border-blue-700 bg-blue-700 text-white" : "border-zinc-400/50 hover:border-blue-500"}`}
-                        >
-                            {layout === "nsfnet" ? "NSFNET" : layout}
-                        </button>
-                    ))}
-                </div>
-            </section>
-
-            {integration && <IntegrationPanel integration={integration} />}
-            <LiveProbePanel host={probeHost} setHost={setProbeHost} probe={probe} isProbing={isProbing} onProbe={probeLiveHost} />
 
             {error ? (
                 <div className="rounded-xl border border-amber-500/50 bg-amber-100/70 p-5 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
@@ -377,13 +219,11 @@ const Visualization = () => {
             ) : data ? (
                 <>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <Metric label="Run" value={runId ?? "Preview"} />
                         <Metric label="Routing mode" value={data.decision.mode.replace("_", " ")} />
                         <Metric label="Active path" value={data.decision.selected_path_id} />
-                        <Metric label="Status" value={runStatus} />
+                        <Metric label="Confidence" value={`${(data.decision.selected_confidence * 100).toFixed(0)}%`} />
+                        <Metric label="Topology" value={`${data.topology.node_count} nodes / ${data.topology.edge_count} links`} />
                     </div>
-
-                    <StageEvidence phase={currentPhase.key} data={data} selectedPath={selectedPath} />
 
                     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
                         <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
@@ -393,13 +233,13 @@ const Visualization = () => {
                                     <p className="text-xs text-zinc-500">Source S0 to destination S9</p>
                                 </div>
                                 <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                                    {data.topology.node_count} NODES / {data.topology.edge_count} LINKS
+                                    NSFNET · 14 SWITCHES
                                 </span>
                             </div>
                             <svg viewBox="0 0 805 400" className="h-auto w-full" role="img" aria-label="Network topology">
                                 {data.links.map((link) => {
-                                    const start = positions[link.source];
-                                    const end = positions[link.target];
+                                    const start = nodePositions[link.source];
+                                    const end = nodePositions[link.target];
                                     const key = link.source < link.target
                                         ? `${link.source}-${link.target}`
                                         : `${link.target}-${link.source}`;
@@ -418,19 +258,44 @@ const Visualization = () => {
                                         />
                                     );
                                 })}
-                                {phaseIndex >= 1 && phaseIndex < 4 && data.decision.candidates.map((candidate, index) => (
-                                    <polyline
-                                        key={`candidate-${candidate.path_id}`}
-                                        points={candidate.path.map((node) => `${positions[node].x},${positions[node].y}`).join(" ")}
-                                        fill="none"
-                                        stroke={index === 0 ? "#f59e0b" : "#94a3b8"}
-                                        strokeWidth={index === 0 ? 4 : 2}
-                                        strokeDasharray={index === 0 ? "8 5" : "4 6"}
-                                        opacity={index === 0 ? 0.9 : 0.45}
-                                    />
+                                <line x1="32" y1="205" x2={nodePositions[data.source].x - 17} y2="205" stroke="#64748b" strokeWidth="2" />
+                                <g aria-label="Receiver host connected to switch S0">
+                                    <rect x="10" y="190" width="20" height="15" rx="2" fill="#f4f4f5" stroke="#64748b" strokeWidth="2" />
+                                    <path d="M14 209h12m-6-4v4" stroke="#64748b" strokeWidth="2" strokeLinecap="round" />
+                                    <text x="20" y="228" textAnchor="middle" fontSize="9" fontWeight="700" fill="#64748b">RECEIVER</text>
+                                </g>
+                                <line x1={nodePositions[data.destination].x + 17} y1="145" x2="756" y2="145" stroke="#64748b" strokeWidth="2" />
+                                <g aria-label="Server sender connected to switch S9">
+                                    <rect x="758" y="130" width="19" height="29" rx="3" fill="#f4f4f5" stroke="#64748b" strokeWidth="2" />
+                                    <circle cx="772" cy="136" r="1.5" fill="#34d399" />
+                                    <path d="M762 143h10m-10 5h10m-10 5h7" stroke="#64748b" strokeWidth="1.5" />
+                                    <text x="767" y="174" textAnchor="middle" fontSize="9" fontWeight="700" fill="#64748b">SENDER</text>
+                                </g>
+                                <g aria-label="Floodlight SDN controller">
+                                    <rect x="335" y="16" width="134" height="31" rx="7" fill="#dbeafe" stroke="#2563eb" strokeWidth="1.5" />
+                                    <circle cx="351" cy="31.5" r="6" fill="#2563eb" />
+                                    <text x="402" y="29" textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e3a8a">FLOODLIGHT SDN</text>
+                                    <text x="402" y="39" textAnchor="middle" fontSize="8" fontWeight="700" fill="#1e3a8a">CONTROLLER</text>
+                                </g>
+                                {activeStep > 0 && activeStep < algorithmStages.length - 1 && data.decision.candidates.map((candidate, index) => {
+                                    const rank = sortedCandidates.findIndex((item) => item.path_id === candidate.path_id);
+                                    const color = activeStep === 3
+                                        ? candidate.predicted_traffic === "low" ? "#34d399" : "#fb923c"
+                                        : activeStep === 4
+                                            ? rank === 0 ? "#fbbf24" : "#94a3b8"
+                                            : pathColors[index % pathColors.length];
+                                    return <path key={`candidate-${candidate.path_id}`} d={candidatePathD(candidate.path)} fill="none" stroke={color} strokeWidth={rank === 0 ? 3.5 : 2.5} strokeDasharray={activeStep === 1 ? "7 6" : undefined} strokeLinecap="round" strokeLinejoin="round" opacity={activeStep === 4 && rank > 0 ? 0.28 : 0.55} />;
+                                })}
+                                {selectedPath.length > 1 && <path id="selected-packet-route" d={selectedPathD} fill="none" stroke="none" />}
+                                {activeStep === algorithmStages.length - 1 && selectedPath.length > 1 && (data.stream?.packets ?? []).map((packet, index) => (
+                                    <circle key={packet.id} r={index % 2 === 0 ? 5 : 3.5} fill={index % 2 === 0 ? "#fbbf24" : "#22d3ee"} stroke="#0f172a" strokeWidth="1.5">
+                                        <animateMotion dur={`${playbackTimings[playbackSpeed].packetSeconds}s`} repeatCount="indefinite" begin={`${-packet.progress * playbackTimings[playbackSpeed].packetSeconds}s`}>
+                                            <mpath href="#selected-packet-route" />
+                                        </animateMotion>
+                                    </circle>
                                 ))}
                                 {data.nodes.map((node) => {
-                                    const position = positions[node.id];
+                                    const position = nodePositions[node.id];
                                     const active = selectedPath.includes(node.id);
                                     return (
                                         <g key={node.id}>
@@ -448,18 +313,13 @@ const Visualization = () => {
                                         </g>
                                     );
                                 })}
-                                {phaseIndex >= 6 && pulseNode !== undefined && (
-                                    <circle
-                                        cx={positions[pulseNode].x}
-                                        cy={positions[pulseNode].y}
-                                        r="9"
-                                        fill="#f97316"
-                                        stroke="white"
-                                        strokeWidth="3"
-                                        className="transition-all duration-500"
-                                    />
-                                )}
                             </svg>
+                            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+                                <span>Source S{data.source} → destination S{data.destination} · {data.links.length} physical links</span>
+                                <span className={`font-semibold ${activeStep === algorithmStages.length - 1 ? "text-emerald-700 dark:text-emerald-300" : "text-zinc-500"}`}>{activeStep === algorithmStages.length - 1 ? `${data.stream?.packets.length ?? 0} packets in flight · continuous` : "Packets held until route selection"}</span>
+                            </div>
+                            <p className="mt-1 text-[11px] font-medium text-blue-700 dark:text-blue-300">Step {activeStep + 1} / {algorithmStages.length}: {algorithmStages[activeStep].title}</p>
+                            <p className="mt-1 text-[11px] text-zinc-500">Backend simulation stream. Mininet and Floodlight adapters remain in the project for Linux deployment; they are not active in this Windows demo.</p>
                         </div>
 
                         <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
@@ -478,63 +338,83 @@ const Visualization = () => {
                         </div>
                     </div>
 
+                    <section className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h2 className="text-lg font-bold">Algorithm walkthrough</h2>
+                                <p className="mt-1 text-xs text-zinc-500">Step {activeStep + 1} of {algorithmStages.length} · {algorithmStages[activeStep].title}</p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="mr-1 text-xs text-zinc-500">Packet and walkthrough speed</span>
+                                {(["slow", "medium", "fast"] as PlaybackSpeed[]).map((speed) => <button key={speed} type="button" onClick={() => setPlaybackSpeed(speed)} aria-pressed={playbackSpeed === speed} className={`rounded-lg border px-3 py-2 text-xs font-semibold capitalize ${playbackSpeed === speed ? "border-blue-700 bg-blue-700 text-white" : "border-zinc-400/40 hover:border-blue-500"}`}>{speed}</button>)}
+                                <button type="button" onClick={() => { if (activeStep === algorithmStages.length - 1) setActiveStep(0); setPlaying((value) => !value); }} className="rounded-lg border border-zinc-400/40 px-3 py-2 text-xs font-semibold">{playing ? "Pause" : "Play"}</button>
+                                <button type="button" onClick={() => { setActiveStep(0); setPlaying(true); }} className="rounded-lg border border-zinc-400/40 px-3 py-2 text-xs font-semibold">Restart</button>
+                                <button type="button" onClick={() => { setPlaying(false); setActiveStep((step) => Math.min(step + 1, algorithmStages.length - 1)); }} className="rounded-lg border border-zinc-400/40 px-3 py-2 text-xs font-semibold">Next step</button>
+                            </div>
+                        </div>
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {algorithmStages.map((stage, index) => <button key={stage.title} type="button" onClick={() => { setActiveStep(index); setPlaying(false); }} aria-current={activeStep === index ? "step" : undefined} className={`rounded-lg border p-3 text-left transition ${activeStep === index ? "border-blue-600 bg-blue-600/10" : "border-zinc-400/20 hover:border-blue-400"}`}>
+                                <span className={`font-mono text-[10px] font-bold ${activeStep === index ? "text-blue-700 dark:text-blue-300" : "text-zinc-500"}`}>STEP {String(index + 1).padStart(2, "0")}</span>
+                                <span className="ml-2 text-xs font-semibold">{stage.title}</span>
+                            </button>)}
+                        </div>
+                        <p className="mt-3 rounded-lg bg-zinc-500/[0.06] p-3 text-sm leading-6 text-zinc-700 dark:text-zinc-200">{algorithmStages[activeStep].description}{activeStep === 5 ? ` Current decision: ${data.decision.reason} Selected path: ${data.decision.selected_path_id.replaceAll("-", " → ")}.` : ""}</p>
+                        <p className="mt-2 text-[11px] text-zinc-500">Traffic class and telemetry values are scenario simulation data. Packet animation follows the backend-selected path; it does not claim live switch traffic.</p>
+                    </section>
+
                     <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
-                        <h2 className="text-lg font-bold">Candidate paths and telemetry</h2>
+                        <div className="flex flex-wrap items-end justify-between gap-2">
+                            <div><h2 className="text-lg font-bold">Candidate paths and telemetry</h2><p className="mt-1 text-xs text-zinc-500">Rows highlight and reorder to match the current algorithm step. RTT / delay and traffic values are simulated.</p></div>
+                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">{data.scenario.toUpperCase()} TRAFFIC · STEP {activeStep + 1}</span>
+                        </div>
                         <div className="mt-3 overflow-x-auto">
-                            <table className="w-full min-w-[760px] text-left text-sm">
+                            <table className="w-full min-w-[1180px] text-left text-sm">
                                 <thead className="border-b border-zinc-400/30 text-xs uppercase text-zinc-500">
-                                    <tr><th className="px-3 py-2">Path</th><th className="px-3 py-2">Prediction</th><th className="px-3 py-2">Confidence</th><th className="px-3 py-2">Latency</th><th className="px-3 py-2">Throughput</th><th className="px-3 py-2">Utilization</th><th className="px-3 py-2">QoE</th></tr>
+                                    <tr><th className="px-3 py-2">Path</th><th className="px-3 py-2">Hops</th><th className="px-3 py-2">Traffic</th><th className="px-3 py-2">Confidence</th><th className="px-3 py-2">RTT / delay</th><th className="px-3 py-2">Throughput</th><th className="px-3 py-2">Packet loss</th><th className="px-3 py-2">Jitter</th><th className="px-3 py-2">Utilization</th><th className="px-3 py-2">QoE</th><th className="px-3 py-2">Step result</th></tr>
                                 </thead>
                                 <tbody>
-                                    {data.decision.candidates.map((candidate) => (
-                                        <tr key={candidate.path_id} className={candidate.path_id === data.decision.selected_path_id ? "bg-blue-500/10 font-semibold" : "border-b border-zinc-400/10"}>
-                                            <td className="px-3 py-3">{candidate.path_id}</td>
+                                    {sortedCandidates.map((candidate, rank) => {
+                                        const selected = candidate.path_id === data.decision.selected_path_id;
+                                        const stepResult = activeStep === 0 ? "Topology checked" : activeStep === 1 ? "Path calculated" : activeStep === 2 ? "Metrics compared" : activeStep === 3 ? `${candidate.predicted_traffic} traffic` : activeStep === 4 ? `QoE rank #${rank + 1}` : selected ? "Forwarding" : "Alternate";
+                                        const rowClass = activeStep === 5 && selected ? "bg-blue-500/15 font-semibold" : activeStep === 3 ? candidate.predicted_traffic === "low" ? "bg-emerald-500/[0.06]" : "bg-orange-500/[0.06]" : activeStep === 4 && rank === 0 ? "bg-amber-500/10 font-semibold" : selected ? "bg-blue-500/[0.05]" : "border-b border-zinc-400/10";
+                                        return <tr key={candidate.path_id} className={rowClass}>
+                                            <td className="px-3 py-3 font-mono">{candidate.path_id.replaceAll("-", " → ")}</td>
+                                            <td className="px-3 py-3">{candidate.hop_count}</td>
                                             <td className="px-3 py-3 capitalize">{candidate.predicted_traffic}</td>
                                             <td className="px-3 py-3">{(candidate.confidence * 100).toFixed(0)}%</td>
                                             <td className="px-3 py-3">{candidate.latency_ms} ms</td>
                                             <td className="px-3 py-3">{candidate.throughput_mbps} Mbps</td>
+                                            <td className="px-3 py-3">{Number(candidate.packet_loss_pct.toFixed(2))}%</td>
+                                            <td className="px-3 py-3">{candidate.jitter_ms} ms</td>
                                             <td className="px-3 py-3">{candidate.utilization_pct}%</td>
                                             <td className="px-3 py-3">{candidate.qoe_score.toFixed(2)}</td>
-                                        </tr>
-                                    ))}
+                                            <td className="px-3 py-3 text-xs font-semibold">{stepResult}</td>
+                                        </tr>;
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
-                    <BaselineComparison baselines={data.baselines} />
-
-                    <div className="grid gap-5 lg:grid-cols-2">
-                        <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
-                            <h2 className="text-lg font-bold">Decision event timeline</h2>
-                            <ol className="mt-3 space-y-3">
-                                {(events.length ? events : [{ eventId: "preview", timestamp: "", type: "preview.mode", payload: {} }]).map((event) => (
-                                    <li key={event.eventId} className="flex items-start gap-3 border-l-2 border-blue-500/50 pl-3">
-                                        <div>
-                                            <p className="text-sm font-semibold">{event.type}</p>
-                                            <p className="text-xs text-zinc-500">{event.timestamp || "Preview only"}</p>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ol>
+                    <section className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
+                        <div className="mb-4">
+                            <h2 className="text-lg font-bold">Research metrics comparison</h2>
+                            <p className="mt-1 text-xs text-zinc-500">Hop-count, QoS-aware, and AIRSDN results for the selected {data.scenario}-traffic scenario.</p>
+                            <p className="mt-1 text-[11px] text-zinc-500">Throughput and RTT-style metrics follow the paper's comparison themes. Values here are calculated from this project's simulated scenario data, not copied research-paper results.</p>
                         </div>
-                        <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60">
-                            <h2 className="text-lg font-bold">Experiment history</h2>
-                            {history.length ? (
-                                <div className="mt-3 space-y-2">
-                                    {history.slice(0, 5).map((run) => (
-                                        <div key={run.id} className="flex items-center justify-between rounded-lg bg-zinc-500/10 px-3 py-2 text-sm">
-                                            <span className="font-mono font-semibold">{run.id}</span>
-                                            <span className="capitalize">{run.scenario} / {run.mode.replace("_", " ")}</span>
-                                            <span className="text-xs text-zinc-500">{run.event_count} events</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <p className="mt-3 text-sm text-zinc-500">No completed experiments yet.</p>
-                            )}
+                        <div className="grid gap-4 lg:grid-cols-2">
+                            <StrategyChart title="Throughput by routing strategy" unit="Mbps" color="#2563eb" items={[
+                                { label: "Hop Count", value: data.baselines.hop_count.throughput_mbps, path: data.baselines.hop_count.selected_path_id },
+                                { label: "QoS-aware", value: data.baselines.qos_aware.throughput_mbps, path: data.baselines.qos_aware.selected_path_id },
+                                { label: "AIRSDN", value: data.baselines.airsdn.throughput_mbps, path: data.baselines.airsdn.selected_path_id },
+                            ]} />
+                            <StrategyChart title="RTT / latency by routing strategy" unit="ms" color="#0d9488" items={[
+                                { label: "Hop Count", value: data.baselines.hop_count.latency_ms, path: data.baselines.hop_count.selected_path_id },
+                                { label: "QoS-aware", value: data.baselines.qos_aware.latency_ms, path: data.baselines.qos_aware.selected_path_id },
+                                { label: "AIRSDN", value: data.baselines.airsdn.latency_ms, path: data.baselines.airsdn.selected_path_id },
+                            ]} />
                         </div>
-                    </div>
+                    </section>
                 </>
             ) : (
                 <div className="rounded-xl border border-zinc-400/30 bg-white/60 p-8 text-center dark:bg-zinc-900/60">Loading routing results...</div>
@@ -548,225 +428,6 @@ const Metric = ({ label, value }: { label: string; value: string }) => (
         <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{label}</p>
         <p className="mt-2 truncate text-lg font-bold capitalize">{value}</p>
     </div>
-);
-
-const IntegrationPanel = ({ integration }: { integration: IntegrationStatus }) => (
-    <section className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60" aria-label="Integration status">
-        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Execution source</p>
-                <h2 className="mt-1 text-xl font-bold">{integration.mode === "real" ? "Real network integration" : "Deterministic simulation"}</h2>
-            </div>
-            <p className="text-xs text-zinc-500">The dashboard reports tool availability instead of hiding missing live telemetry.</p>
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-            {integration.tools.map((tool) => (
-                <div key={tool.name} className={`rounded-lg border p-3 ${tool.available ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`} title={tool.detail}>
-                    <p className="text-xs font-semibold uppercase tracking-wider">{tool.name}</p>
-                    <p className="mt-1 text-sm font-bold">{tool.available ? "READY" : "UNAVAILABLE"}</p>
-                </div>
-            ))}
-        </div>
-        {integration.mode === "simulation" && <p className="mt-3 text-xs text-amber-800 dark:text-amber-200">Run the backend inside Ubuntu/WSL2 with Mininet, Open vSwitch, iperf3, Java/Floodlight, and NFStream to switch this panel to real mode.</p>}
-    </section>
-);
-
-const LiveProbePanel = ({
-    host,
-    setHost,
-    probe,
-    isProbing,
-    onProbe,
-}: {
-    host: string;
-    setHost: (value: string) => void;
-    probe: LiveProbe | null;
-    isProbing: boolean;
-    onProbe: () => void;
-}) => (
-    <section className="rounded-xl border border-zinc-400/30 bg-white/60 p-4 shadow-sm dark:bg-zinc-900/60" aria-label="Live telemetry probe">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">Live telemetry probe</p>
-                <h2 className="mt-1 text-xl font-bold">Measure a reachable host</h2>
-                <p className="mt-1 text-xs text-zinc-500">Uses real ping and iperf3 when installed. Invalid values remain visibly invalid.</p>
-            </div>
-            <div className="flex gap-2">
-                <input value={host} onChange={(event) => setHost(event.target.value)} aria-label="Host to probe" className="w-44 rounded-lg border border-zinc-400/50 bg-transparent px-3 py-2 text-sm" />
-                <button type="button" onClick={onProbe} disabled={isProbing} className="rounded-lg bg-cyan-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{isProbing ? "Probing..." : "Probe host"}</button>
-            </div>
-        </div>
-        {probe && <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {probe.metrics.map((metric) => <div key={`${metric.metric}-${metric.source}`} className={`rounded-lg border p-3 ${metric.quality === "valid" ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
-                <p className="text-xs uppercase tracking-wider text-zinc-500">{metric.metric}</p>
-                <p className="mt-1 font-semibold">{metric.quality === "valid" ? `${metric.value.toFixed(2)} ${metric.unit}` : "Unavailable"}</p>
-                <p className="mt-1 text-[11px] text-zinc-500">{metric.quality} / {metric.source}</p>
-            </div>)}
-        </div>}
-    </section>
-);
-
-const StageEvidence = ({
-    phase,
-    data,
-    selectedPath,
-}: {
-    phase: PlaybackPhase;
-    data: DemoResult;
-    selectedPath: number[];
-}) => {
-    const flowRows = selectedPath.slice(0, -1).map((node, index) => ({
-        hop: index + 1,
-        switch: `S${node}`,
-        next: `S${selectedPath[index + 1]}`,
-        action: `forward to S${selectedPath[index + 1]}`,
-    }));
-
-    const header = (title: string, description: string) => (
-        <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-            <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-700 dark:text-blue-300">Current output</p>
-                <h2 className="mt-1 text-xl font-bold">{title}</h2>
-            </div>
-            <p className="max-w-xl text-xs text-zinc-500">{description}</p>
-        </div>
-    );
-
-    if (phase === "topology") {
-        return (
-            <section className="rounded-xl border border-blue-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("Topology creation record", "The topology module creates the graph before any route can be calculated.")}
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <EvidenceValue label="Nodes created" value={`${data.topology.node_count} switches`} />
-                    <EvidenceValue label="Links created" value={`${data.topology.edge_count} links`} />
-                    <EvidenceValue label="Source" value="S0" />
-                    <EvidenceValue label="Destination" value="S9" />
-                </div>
-                <div className="mt-4 overflow-x-auto">
-                    <table className="w-full min-w-[620px] text-left text-sm">
-                        <thead className="border-b border-zinc-400/30 text-xs uppercase text-zinc-500"><tr><th className="px-3 py-2">Record</th><th className="px-3 py-2">Value</th><th className="px-3 py-2">Status</th></tr></thead>
-                        <tbody>
-                            <tr><td className="px-3 py-2">Topology validation</td><td className="px-3 py-2">14 nodes / 22 links</td><td className="px-3 py-2 font-semibold text-emerald-700">PASS</td></tr>
-                            <tr><td className="px-3 py-2">Connectivity</td><td className="px-3 py-2">All nodes reachable</td><td className="px-3 py-2 font-semibold text-emerald-700">PASS</td></tr>
-                            <tr><td className="px-3 py-2">Reference paths</td><td className="px-3 py-2">3-hop / 4-hop / 5-hop</td><td className="px-3 py-2 font-semibold text-emerald-700">PASS</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-        );
-    }
-
-    if (phase === "candidates") {
-        return (
-            <section className="rounded-xl border border-amber-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("Candidate-path table", "The path enumerator has generated loop-free alternatives. The routing engine will compare these rows next.")}
-                <EvidenceTable headers={["Candidate", "Path", "Hops", "Valid", "Selection state"]}>
-                    {data.decision.candidates.map((candidate, index) => <tr key={candidate.path_id}><td className="px-3 py-2 font-mono">P{index + 1}</td><td className="px-3 py-2 font-mono">{candidate.path_id}</td><td className="px-3 py-2">{candidate.hop_count}</td><td className="px-3 py-2 text-emerald-700">VALID</td><td className="px-3 py-2">Waiting for telemetry</td></tr>)}
-                </EvidenceTable>
-            </section>
-        );
-    }
-
-    if (phase === "telemetry") {
-        return (
-            <section className="rounded-xl border border-cyan-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("Traffic-generation and telemetry table", "The simulator generates repeatable flow conditions and attaches measurements to every candidate path. Real Mininet probes will replace these values later.")}
-                <EvidenceTable headers={["Path", "Flow", "Latency", "Throughput", "Loss", "Jitter", "Utilization"]}>
-                    {data.decision.candidates.map((candidate) => <tr key={candidate.path_id}><td className="px-3 py-2 font-mono">{candidate.path_id}</td><td className="px-3 py-2">video-flow-{candidate.hop_count}</td><td className="px-3 py-2">{candidate.latency_ms} ms</td><td className="px-3 py-2">{candidate.throughput_mbps} Mbps</td><td className="px-3 py-2">{candidate.packet_loss_pct}%</td><td className="px-3 py-2">{candidate.jitter_ms} ms</td><td className="px-3 py-2">{candidate.utilization_pct}%</td></tr>)}
-                </EvidenceTable>
-            </section>
-        );
-    }
-
-    if (phase === "prediction") {
-        return (
-            <section className="rounded-xl border border-violet-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("ML prediction table", "The classifier reads the telemetry features and returns a traffic class plus confidence for each candidate.")}
-                <EvidenceTable headers={["Path", "Input features", "Prediction", "Confidence", "Threshold check"]}>
-                    {data.decision.candidates.map((candidate) => <tr key={candidate.path_id}><td className="px-3 py-2 font-mono">{candidate.path_id}</td><td className="px-3 py-2">5 telemetry features</td><td className="px-3 py-2 font-semibold capitalize">{candidate.predicted_traffic}</td><td className="px-3 py-2">{(candidate.confidence * 100).toFixed(0)}%</td><td className="px-3 py-2">{candidate.confidence >= data.decision.threshold ? "PASS" : "FALLBACK"}</td></tr>)}
-                </EvidenceTable>
-            </section>
-        );
-    }
-
-    if (phase === "decision") {
-        return (
-            <section className="rounded-xl border border-blue-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("Routing decision table", "The decision engine combines confidence and QoE score, then records why the selected route won.")}
-                <EvidenceTable headers={["Path", "Confidence", "QoE score", "Decision"]}>
-                    {data.decision.candidates.map((candidate) => <tr key={candidate.path_id}><td className="px-3 py-2 font-mono">{candidate.path_id}</td><td className="px-3 py-2">{(candidate.confidence * 100).toFixed(0)}%</td><td className="px-3 py-2">{candidate.qoe_score.toFixed(2)}</td><td className="px-3 py-2 font-semibold">{candidate.path_id === data.decision.selected_path_id ? data.decision.mode : "REJECTED"}</td></tr>)}
-                </EvidenceTable>
-            </section>
-        );
-    }
-
-    if (phase === "flow") {
-        return (
-            <section className="rounded-xl border border-emerald-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-                {header("Flow-table update", "The selected path is translated into forwarding actions. In the full SDN version, these rows will be installed through Floodlight/OpenFlow.")}
-                <EvidenceTable headers={["Hop", "Current switch", "Next switch", "Forwarding action"]}>
-                    {flowRows.map((row) => <tr key={row.hop}><td className="px-3 py-2">{row.hop}</td><td className="px-3 py-2 font-mono">{row.switch}</td><td className="px-3 py-2 font-mono">{row.next}</td><td className="px-3 py-2">{row.action}</td></tr>)}
-                </EvidenceTable>
-            </section>
-        );
-    }
-
-    return (
-        <section className="rounded-xl border border-orange-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-            {header("Multimedia flow status", "The selected route is now carrying the simulated multimedia flow. The orange pulse on the graph represents this movement.")}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <EvidenceValue label="Flow" value="video-stream-01" />
-                <EvidenceValue label="Route" value={data.decision.selected_path_id} />
-                <EvidenceValue label="Mode" value={data.decision.mode.replace("_", " ")} />
-                <EvidenceValue label="Quality stage" value="Collecting result" />
-            </div>
-            <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-300">Next implementation step: attach this flow to a real video file and calculate PSNR and SSIM after transmission.</p>
-        </section>
-    );
-};
-
-const EvidenceTable = ({ headers, children }: { headers: string[]; children: ReactNode }) => (
-    <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-zinc-400/30 text-xs uppercase text-zinc-500"><tr>{headers.map((header) => <th key={header} className="px-3 py-2">{header}</th>)}</tr></thead>
-            <tbody>{children}</tbody>
-        </table>
-    </div>
-);
-
-const EvidenceValue = ({ label, value }: { label: string; value: string }) => (
-    <div className="rounded-lg bg-zinc-500/10 p-3">
-        <p className="text-xs uppercase tracking-wider text-zinc-500">{label}</p>
-        <p className="mt-1 font-semibold">{value}</p>
-    </div>
-);
-
-const BaselineComparison = ({ baselines }: { baselines: DemoResult["baselines"] }) => (
-    <section className="rounded-xl border border-emerald-500/30 bg-white/70 p-4 shadow-sm dark:bg-zinc-900/60">
-        <div className="mb-4 flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-            <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">Same candidates, three strategies</p>
-                <h2 className="mt-1 text-xl font-bold">Baseline comparison</h2>
-            </div>
-            <p className="max-w-xl text-xs text-zinc-500">Every strategy receives the same paths and telemetry. Only the selection policy changes.</p>
-        </div>
-        <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-sm">
-                <thead className="border-b border-zinc-400/30 text-xs uppercase text-zinc-500"><tr><th className="px-3 py-2">Strategy</th><th className="px-3 py-2">Selected path</th><th className="px-3 py-2">Hops</th><th className="px-3 py-2">Latency</th><th className="px-3 py-2">Throughput</th><th className="px-3 py-2">Loss</th><th className="px-3 py-2">Utilization</th></tr></thead>
-                <tbody>
-                    {Object.entries(baselines).map(([key, result]) => <tr key={key} className={key === "airsdn" ? "bg-emerald-500/10 font-semibold" : "border-b border-zinc-400/10"}>
-                        <td className="px-3 py-3 uppercase">{result.strategy.replace("_", " ")}</td>
-                        <td className="px-3 py-3 font-mono">{result.selected_path_id}</td>
-                        <td className="px-3 py-3">{result.hop_count}</td>
-                        <td className="px-3 py-3">{result.latency_ms} ms</td>
-                        <td className="px-3 py-3">{result.throughput_mbps} Mbps</td>
-                        <td className="px-3 py-3">{result.packet_loss_pct}%</td>
-                        <td className="px-3 py-3">{result.utilization_pct}%</td>
-                    </tr>)}
-                </tbody>
-            </table>
-        </div>
-    </section>
 );
 
 const Detail = ({ label, value }: { label: string; value: string }) => (

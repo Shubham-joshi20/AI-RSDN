@@ -4,13 +4,14 @@ This standalone Python slice demonstrates the routing algorithm before Mininet a
 
 ## Included
 
-- A deterministic 14-node, 22-link NSFNET-style topology.
+- The paper-figure 14-switch, 20-link topology shared with the Mininet adapter.
 - Connectivity and reference-path validation.
 - Up to five shortest simple candidate paths from source `0` to destination `9`.
 - Path telemetry fields: latency, throughput, loss, jitter, and utilization.
 - Confidence-aware routing with the SRS threshold of `0.90`.
 - QoE fallback using normalized throughput, latency, loss, jitter, and utilization.
 - Reproducible low-traffic and high-traffic presentation scenarios.
+- A backend-timed `/api/stream` response for continuous packet animation on the selected path.
 
 ## Run
 
@@ -31,7 +32,7 @@ cd FrontEnd
 npm run dev
 ```
 
-Open the Visualization page at `http://localhost:5173/visualization`. The Vite development proxy forwards `/api` requests to the Python service on port `8000`.
+Open the Visualization page at `http://localhost:5173/visualization`. The Vite development proxy forwards `/api` requests to the Python service on port `8000`; `/api/stream` supplies the selected route and looping packet phases while the page is open.
 
 ## Evaluation result
 

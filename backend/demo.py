@@ -4,7 +4,8 @@ import argparse
 import json
 from dataclasses import asdict
 
-from backend.routing import NetworkTopology, PathMetrics, choose_route, compare_strategies
+from backend.routing import NetworkTopology, PathMetrics, choose_route
+from backend.routing.baselines import compare_strategies
 
 
 def build_candidates(scenario: str, paths: list[tuple[int, ...]]) -> list[PathMetrics]:
@@ -41,9 +42,7 @@ def build_candidates(scenario: str, paths: list[tuple[int, ...]]) -> list[PathMe
     return candidates
 
 
-def run_demo(scenario: str, confidence_threshold: float = 0.90) -> dict[str, object]:
-    if scenario not in {"low", "high"}:
-        raise ValueError("scenario must be low or high")
+def run_demo(scenario: str) -> dict[str, object]:
     topology = NetworkTopology()
     validation = topology.validate()
     if not validation.passed:
@@ -51,7 +50,7 @@ def run_demo(scenario: str, confidence_threshold: float = 0.90) -> dict[str, obj
 
     paths = topology.shortest_paths(0, 9, limit=5)
     candidates = build_candidates(scenario, paths)
-    decision = choose_route(candidates, confidence_threshold)
+    decision = choose_route(candidates)
     return {
         "scenario": scenario,
         "nodes": [{"id": node, "label": f"S{node}"} for node in topology.nodes],

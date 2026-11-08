@@ -3,10 +3,10 @@ import { useNavigate, useLocation } from "react-router";
 import { motion } from "framer-motion";
 import { FaGithub } from "react-icons/fa";
 
-const menuItems = ["Showcase", "Visualization", "Algorithm", "About"];
+const menuItems = ["Campus Demo", "Visualization", "Algorithm", "About"];
 
 const getActiveIndex = (pathname: string) => {
-  if (pathname === "/") return 0;
+  if (pathname === "/" || pathname === "/campus-demo") return 0;
   const currentIndex = menuItems.findIndex((item) =>
     pathname.includes(item.toLowerCase())
   );
@@ -50,7 +50,7 @@ const Navbar: React.FC = () => {
           {menuItems[activeIndex]}
         </motion.div>
         {menuItems.map((item, index) => {
-          const path = index === 0 ? "/" : `/${item.toLowerCase()}`;
+          const path = index === 0 ? "/campus-demo" : `/${item.toLowerCase()}`;
           const isActive = location.pathname === path;
 
           return (

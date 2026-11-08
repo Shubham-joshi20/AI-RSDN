@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from network.nsfnet_topology import LINKS
+
 
 @dataclass(frozen=True)
 class TopologyValidation:
@@ -16,26 +18,11 @@ class TopologyValidation:
 
 
 class NetworkTopology:
-    """Deterministic NSFNET-style graph used by the first evaluation slice."""
+    """14-switch topology transcribed from the paper's Mininet figure."""
 
     def __init__(self) -> None:
         self._adjacency: dict[int, set[int]] = {node: set() for node in range(14)}
-        links = (
-            (0, 1), (0, 2), (0, 3),
-            (1, 4), (1, 5), (1, 7),
-            (2, 5), (2, 6),
-            (3, 8),
-            (4, 9),
-            (5, 7), (5, 10), (5, 13),
-            (6, 11),
-            (7, 10), (7, 12),
-            (8, 9), (8, 12),
-            (9, 10),
-            (10, 13),
-            (11, 12),
-            (12, 13),
-        )
-        for left, right in links:
+        for left, right in LINKS:
             self._adjacency[left].add(right)
             self._adjacency[right].add(left)
 
@@ -84,9 +71,9 @@ class NetworkTopology:
 
     def validate(self) -> TopologyValidation:
         reference_paths = {
-            "3-hop": (0, 3, 8, 9),
-            "4-hop": (0, 1, 7, 10, 9),
-            "5-hop": (0, 2, 5, 13, 10, 9),
+            "3-hop": (0, 1, 8, 9),
+            "4-hop": (0, 2, 5, 12, 9),
+            "5-hop": (0, 1, 8, 11, 12, 9),
         }
         reachable = set()
         pending = [0]

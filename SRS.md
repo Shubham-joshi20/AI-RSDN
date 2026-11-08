@@ -107,13 +107,13 @@ The system shall allow an experiment to define source host, destination host, pr
 
 The default scenarios shall include:
 
-- **3-hop route:** reference path through switches 0-3-8-9.
-- **4-hop route:** reference path through switches 0-1-7-10-9.
-- **5-hop route:** reference path through switches 0-2-5-13-10-9.
+- **3-hop route:** reference path through switches 0-1-8-9.
+- **4-hop route:** reference path through switches 0-2-5-12-9.
+- **5-hop route:** reference path through switches 0-1-8-11-12-9.
 - **Low traffic:** approximately 30% link usage, using repeatable background TCP flows.
 - **High traffic:** approximately 90% link usage, using repeatable background TCP flows.
 
-The exact topology identifiers shall be configurable because switch naming can differ between Mininet and the paper diagrams.
+The Mininet and backend graph share the 14-switch, 20-link topology drawn in Fig. 1 of the paper. Switch IDs match the figure labels, and the receiver and sender attach to switches S0 and S9 respectively.
 
 ### FR-04: Traffic Generation
 
